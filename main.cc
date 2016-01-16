@@ -53,7 +53,7 @@ SCORE Eval(const BOARD &B) {
 	return cnt[B.who]-cnt[B.who^1];
 }
 */
-
+// TODO: LV2 注意循環盤面，若可以勝則避免和棋
 SCORE Eval(const BOARD &B) {
 	SCORE score[2] = {0,0};
 	for(POS p = 0; p < 32; p++)
@@ -105,12 +105,12 @@ SCORE SearchMin(const BOARD &B,int dep,int cut) {
 	return ret;
 }
 #define max(a,b) ((a)>(b)?(a):(b))
-SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depthLeft)
+SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depthLimit)
 {
 	if(B.ChkLose())return -WIN;
 	// TODO: LV2 使用知識
 	MOVLST lst;
-	if(depthLeft == 0 			// remaining search depth
+	if(depthLimit == dep 		// remaining search depth
 		|| TimesUp()
 		|| B.MoveGen(lst) == 0)	// a terminal node(regardless flipping chesses)
 		return +Eval(B);
@@ -122,13 +122,13 @@ SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int dept
 	{
 		BOARD N(B);
 		N.Move(lst.mov[i]);		// get the next position
-		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depthLeft-1);	// null window search; TEST in SCOUT
+		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depthLimit);	// null window search; TEST in SCOUT
 		if(t > m)
 		{
-			if(n == beta || depthLeft < 3 || t >= beta)
+			if(n == beta || depthLimit - dep < 3 || t >= beta)
 				m = t;
 			else
-				m = -NegaScoutSearch( N, -beta, -t, dep+1, depthLeft-1);	// re-search
+				m = -NegaScoutSearch( N, -beta, -t, dep+1, depthLimit);	// re-search
 			if(dep == 0)
 				BestMove = lst.mov[i];
 		}
@@ -160,7 +160,7 @@ MOV Play(const BOARD &B) {
 		return MOV(p,p);
 	}
 	
-	// TODO: LV3 偵測連續未翻子或吃子的次數
+	// TODO: LV5 偵測連續未翻子或吃子的次數
 	// TODO: LV4 偵測循環盤面
 	// 若搜出來的結果會比現在好就用搜出來的走法
 	int depthLimit = 11;
