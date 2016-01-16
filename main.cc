@@ -19,6 +19,8 @@
 #include<ctime>
 #endif
 
+char myversion[1024] = "Eval with fixed material Point v1.0";
+
 const int DEFAULTTIME = 15;
 typedef  int SCORE;
 static const SCORE INF=1000001;
@@ -51,6 +53,24 @@ SCORE Eval(const BOARD &B) {
 	return cnt[B.who]-cnt[B.who^1];
 }
 
+/*
+SCORE Eval(const BOARD &B) {
+	SCORE score[2] = {0,0};
+	for(POS p = 0; p < 32; p++)
+	{
+		if(B.fin[p] < FIN_X)
+		{
+			const CLR c = GetColor(B.fin[p]);
+			const LVL l = GetLevel(B.fin[p]);
+			SCORE level_score[7] = {6540,3270,1640,870,390,770,100};
+			score[c] += level_score[l];
+		}
+	}
+	for(int i = 0; i < 14; i++)
+		score[GetColor(FIN(i))] += (int)(B.cnt[i] * 0.9);
+	return score[B.who]-score[B.who^1];
+}
+*/
 // dep=現在在第幾層
 // cut=還要再走幾層
 SCORE SearchMax(const BOARD &B,int dep,int cut) {
@@ -84,10 +104,45 @@ SCORE SearchMin(const BOARD &B,int dep,int cut) {
 	}
 	return ret;
 }
+#define max(a,b) ((a)>(b)?(a):(b))
+SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depthLeft)
+{
+	if(B.ChkLose())return -WIN;
+	// TODO: LV2 使用知識
+	MOVLST lst;
+	if(depthLeft == 0 			// remaining search depth
+		|| TimesUp()
+		|| B.MoveGen(lst) == 0)	// a terminal node(regardless flipping chesses)
+		return +Eval(B);
+
+	SCORE m = -INF;				// the current lower bound; fail soft
+	SCORE n = beta;				// the current upper bound
+	SCORE t;
+	for(int i = 0; i < lst.num; i++)
+	{
+		BOARD N(B);
+		N.Move(lst.mov[i]);		// get the next position
+		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depthLeft-1);	// null window search; TEST in SCOUT
+		if(t > m)
+		{
+			if(n == beta || depthLeft < 3 || t >= beta)
+				m = t;
+			else
+				m = -NegaScoutSearch( N, -beta, -t, dep+1, depthLeft-1);	// re-search
+			if(dep == 0)
+				BestMove = lst.mov[i];
+		}
+		if(m >= beta)
+			return m;			// beta cut off
+		n = max(alpha,m) + 1;	// set up a null window
+	}
+	return m;
+}
 
 MOV Play(const BOARD &B) {
 #ifdef _WINDOWS
 	Tick=GetTickCount();
+	// TODO: LV2 決定每一步的時限
 	TimeOut = (DEFAULTTIME-3)*1000;
 #else
 	Tick=clock();
@@ -96,14 +151,29 @@ MOV Play(const BOARD &B) {
 	POS p; int c=0;
 
 	// 新遊戲？隨機翻子
-	if(B.who==-1){p=rand()%32;printf("%d\n",p);return MOV(p,p);}
-
+	// TODO: LV1 detect 目前是第一手或第二手，使用預設的策略
+	// TODO: LV1 有策略的翻
+	if(B.who==-1)
+	{
+		p=rand()%32;
+		printf("%d\n",p);
+		return MOV(p,p);
+	}
+	
+	// TODO: LV3 偵測連續未翻子或吃子的次數
+	// TODO: LV4 偵測循環盤面
 	// 若搜出來的結果會比現在好就用搜出來的走法
-	if(SearchMax(B,0,5)>Eval(B))return BestMove;
+	int depthLimit = 11;
+	if(NegaScoutSearch(B,-INF,INF,0,depthLimit) > Eval(B))
+		return BestMove;
+	// if(SearchMax(B,0,5)>Eval(B))return BestMove;
 
-	// 否則隨便翻一個地方 但小心可能已經沒地方翻了
+	// 否則看看是否能翻棋
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X)c++;
+	// 若沒有地方翻，則用搜到的最好走法(相較目前是變差)
 	if(c==0)return BestMove;
+	// 否則隨便翻一個地方
+	// TODO: LV2 有策略的翻
 	c=rand()%c;
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X&&--c<0)break;
 	return MOV(p,p);
@@ -149,36 +219,44 @@ FIN chess2fin(char chess) {
 }
 
 int main(int argc, char* argv[]) {
-
 #ifdef _WINDOWS
 	srand(Tick=GetTickCount());
+	char consoleTitle[1024];
+	GetConsoleTitle(consoleTitle, 1024);
+	SetConsoleTitle(myversion);
 #else
 	srand(Tick=time(NULL));
 #endif
 
 	BOARD B;
-	if (argc!=3) {
+	if (argc!=3 && argc!=2) {
 	    TimeOut=(B.LoadGame("board.txt")-3)*1000;
 	    if(!B.ChkLose())Output(Play(B));
 	    return 0;
 	}
 	Protocol *protocol;
 	protocol = new Protocol();
-	protocol->init_protocol(argv[1],atoi(argv[2]));
+	if (argc == 2)
+		protocol->init_protocol(argv[0],atoi(argv[1]));
+	if (argc == 3)
+		protocol->init_protocol(argv[1],atoi(argv[2]));
 	int iPieceCount[14];
 	char iCurrentPosition[32];
 	int type, remain_time;
 	bool turn;
-	PROTO_CLR color;
+	PROTO_CLR color; // 先手的顏色
 
 	char src[3], dst[3], mov[6];
 	History moveRecord;
 	protocol->init_board(iPieceCount, iCurrentPosition, moveRecord, remain_time);
 	protocol->get_turn(turn,color);
+	
 
 	TimeOut = (DEFAULTTIME-3)*1000;
+	
 
-	B.Init(iCurrentPosition, iPieceCount, (color==2)?(-1):(int)color);
+	B.Init(iCurrentPosition, iPieceCount, (color==PCLR_UNKNOW)?(-1):(int)color);
+	
 
 	MOV m;
 	if(turn) // 我先
@@ -186,12 +264,14 @@ int main(int argc, char* argv[]) {
 	    m = Play(B);
 	    sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
 	    sprintf(dst, "%c%c",(m.ed%4)+'a', m.ed/4+'1');
+		
 	    protocol->send(src, dst);
 	    protocol->recv(mov, remain_time);
-	    if( color == 2)
+	    if( color == PCLR_UNKNOW)
 		color = protocol->get_color(mov);
 	    B.who = color;
 	    B.DoMove(m, chess2fin(mov[3]));
+		
 	    protocol->recv(mov, remain_time);
 	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
 	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
@@ -200,7 +280,7 @@ int main(int argc, char* argv[]) {
 	else // 對方先
 	{
 	    protocol->recv(mov, remain_time);
-	    if( color == 2)
+	    if( color == PCLR_UNKNOW)
 	    {
 		color = protocol->get_color(mov);
 		B.who = color;
@@ -219,6 +299,7 @@ int main(int argc, char* argv[]) {
 	    m = Play(B);
 	    sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
 	    sprintf(dst, "%c%c",(m.ed%4)+'a', m.ed/4+'1');
+		
 	    protocol->send(src, dst);
 	    protocol->recv(mov, remain_time);
 	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
@@ -233,5 +314,8 @@ int main(int argc, char* argv[]) {
 	    B.Display();
 	}
 
+#ifdef _WINDOWS
+	SetConsoleTitle(consoleTitle);
+#endif
 	return 0;
 }
