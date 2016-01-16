@@ -29,13 +29,13 @@ SCORE SearchMax(const BOARD&,int,int);
 SCORE SearchMin(const BOARD&,int,int);
 
 #ifdef _WINDOWS
-DWORD Tick;     // ¶}©l®É¨è
-int   TimeOut;  // ®É­­
+DWORD Tick;     // é–‹å§‹æ™‚åˆ»
+int   TimeOut;  // æ™‚é™
 #else
-clock_t Tick;     // ¶}©l®É¨è
-clock_t TimeOut;  // ®É­­
+clock_t Tick;     // é–‹å§‹æ™‚åˆ»
+clock_t TimeOut;  // æ™‚é™
 #endif
-MOV   BestMove; // ·j¥X¨Óªº³Ì¨ÎµÛªk
+MOV   BestMove; // æœå‡ºä¾†çš„æœ€ä½³è‘—æ³•
 
 bool TimesUp() {
 #ifdef _WINDOWS
@@ -45,7 +45,7 @@ bool TimesUp() {
 #endif
 }
 /*
-// ¤@­Ó­«¶q¤£­«½èªº¼f§½¨ç¼Æ
+// ä¸€å€‹é‡é‡ä¸é‡è³ªçš„å¯©å±€å‡½æ•¸
 SCORE Eval(const BOARD &B) {
 	int cnt[2]={0,0};
 	for(POS p=0;p<32;p++){const CLR c=GetColor(B.fin[p]);if(c!=-1)cnt[c]++;}
@@ -53,7 +53,7 @@ SCORE Eval(const BOARD &B) {
 	return cnt[B.who]-cnt[B.who^1];
 }
 */
-// TODO: LV2 ª`·N´`Àô½L­±¡A­Y¥i¥H³Ó«hÁ×§K©M´Ñ
+// TODO: LV2 æ³¨æ„å¾ªç’°ç›¤é¢ï¼Œè‹¥å¯ä»¥å‹å‰‡é¿å…å’Œæ£‹
 SCORE Eval(const BOARD &B) {
 	SCORE score[2] = {0,0};
 	for(POS p = 0; p < 32; p++)
@@ -71,8 +71,8 @@ SCORE Eval(const BOARD &B) {
 	return score[B.who]-score[B.who^1];
 }
 
-// dep=²{¦b¦b²Ä´X¼h
-// cut=ÁÙ­n¦A¨«´X¼h
+// dep=ç¾åœ¨åœ¨ç¬¬å¹¾å±¤
+// cut=é‚„è¦å†èµ°å¹¾å±¤
 SCORE SearchMax(const BOARD &B,int dep,int cut) {
 	if(B.ChkLose())return -WIN;
 
@@ -108,7 +108,7 @@ SCORE SearchMin(const BOARD &B,int dep,int cut) {
 SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depthLimit)
 {
 	if(B.ChkLose())return -WIN;
-	// TODO: LV2 ¨Ï¥Îª¾ÃÑ
+	// TODO: LV2 ä½¿ç”¨çŸ¥è­˜
 	MOVLST lst;
 	if(depthLimit == dep 		// remaining search depth
 		|| TimesUp()
@@ -142,7 +142,7 @@ SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int dept
 MOV Play(const BOARD &B) {
 #ifdef _WINDOWS
 	Tick=GetTickCount();
-	// TODO: LV2 ¨M©w¨C¤@¨Bªº®É­­
+	// TODO: LV2 æ±ºå®šæ¯ä¸€æ­¥çš„æ™‚é™
 	TimeOut = (DEFAULTTIME-3)*1000;
 #else
 	Tick=clock();
@@ -150,9 +150,9 @@ MOV Play(const BOARD &B) {
 #endif
 	POS p; int c=0;
 
-	// ·s¹CÀ¸¡HÀH¾÷Â½¤l
-	// TODO: LV1 detect ¥Ø«e¬O²Ä¤@¤â©Î²Ä¤G¤â¡A¨Ï¥Î¹w³]ªºµ¦²¤
-	// TODO: LV1 ¦³µ¦²¤ªºÂ½
+	// æ–°éŠæˆ²ï¼Ÿéš¨æ©Ÿç¿»å­
+	// TODO: LV1 detect ç›®å‰æ˜¯ç¬¬ä¸€æ‰‹æˆ–ç¬¬äºŒæ‰‹ï¼Œä½¿ç”¨é è¨­çš„ç­–ç•¥
+	// TODO: LV1 æœ‰ç­–ç•¥çš„ç¿»
 	if(B.who==-1)
 	{
 		p=rand()%32;
@@ -160,20 +160,20 @@ MOV Play(const BOARD &B) {
 		return MOV(p,p);
 	}
 	
-	// TODO: LV5 °»´ú³sÄò¥¼Â½¤l©Î¦Y¤lªº¦¸¼Æ
-	// TODO: LV4 °»´ú´`Àô½L­±
-	// ­Y·j¥X¨Óªºµ²ªG·|¤ñ²{¦b¦n´N¥Î·j¥X¨Óªº¨«ªk
+	// TODO: LV5 åµæ¸¬é€£çºŒæœªç¿»å­æˆ–åƒå­çš„æ¬¡æ•¸
+	// TODO: LV4 åµæ¸¬å¾ªç’°ç›¤é¢
+	// è‹¥æœå‡ºä¾†çš„çµæœæœƒæ¯”ç¾åœ¨å¥½å°±ç”¨æœå‡ºä¾†çš„èµ°æ³•
 	int depthLimit = 11;
 	if(NegaScoutSearch(B,-INF,INF,0,depthLimit) > Eval(B))
 		return BestMove;
 	// if(SearchMax(B,0,5)>Eval(B))return BestMove;
 
-	// §_«h¬İ¬İ¬O§_¯àÂ½´Ñ
+	// å¦å‰‡çœ‹çœ‹æ˜¯å¦èƒ½ç¿»æ£‹
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X)c++;
-	// ­Y¨S¦³¦a¤èÂ½¡A«h¥Î·j¨ìªº³Ì¦n¨«ªk(¬Û¸û¥Ø«e¬OÅÜ®t)
+	// è‹¥æ²’æœ‰åœ°æ–¹ç¿»ï¼Œå‰‡ç”¨æœåˆ°çš„æœ€å¥½èµ°æ³•(ç›¸è¼ƒç›®å‰æ˜¯è®Šå·®)
 	if(c==0)return BestMove;
-	// §_«hÀH«KÂ½¤@­Ó¦a¤è
-	// TODO: LV2 ¦³µ¦²¤ªºÂ½
+	// å¦å‰‡éš¨ä¾¿ç¿»ä¸€å€‹åœ°æ–¹
+	// TODO: LV2 æœ‰ç­–ç•¥çš„ç¿»
 	c=rand()%c;
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X&&--c<0)break;
 	return MOV(p,p);
@@ -244,7 +244,7 @@ int main(int argc, char* argv[]) {
 	char iCurrentPosition[32];
 	int type, remain_time;
 	bool turn;
-	PROTO_CLR color; // ¥ı¤âªºÃC¦â
+	PROTO_CLR color; // å…ˆæ‰‹çš„é¡è‰²
 
 	char src[3], dst[3], mov[6];
 	History moveRecord;
@@ -259,7 +259,7 @@ int main(int argc, char* argv[]) {
 	
 
 	MOV m;
-	if(turn) // §Ú¥ı
+	if(turn) // æˆ‘å…ˆ
 	{
 	    m = Play(B);
 	    sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
 	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
 	    B.DoMove(m, chess2fin(mov[3]));
 	}
-	else // ¹ï¤è¥ı
+	else // å°æ–¹å…ˆ
 	{
 	    protocol->recv(mov, remain_time);
 	    if( color == PCLR_UNKNOW)
