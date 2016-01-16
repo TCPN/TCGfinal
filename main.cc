@@ -44,7 +44,7 @@ bool TimesUp() {
 	return clock() - Tick > TimeOut;
 #endif
 }
-
+/*
 // 一個重量不重質的審局函數
 SCORE Eval(const BOARD &B) {
 	int cnt[2]={0,0};
@@ -52,8 +52,8 @@ SCORE Eval(const BOARD &B) {
 	for(int i=0;i<14;i++)cnt[GetColor(FIN(i))]+=B.cnt[i];
 	return cnt[B.who]-cnt[B.who^1];
 }
+*/
 
-/*
 SCORE Eval(const BOARD &B) {
 	SCORE score[2] = {0,0};
 	for(POS p = 0; p < 32; p++)
@@ -70,7 +70,7 @@ SCORE Eval(const BOARD &B) {
 		score[GetColor(FIN(i))] += (int)(B.cnt[i] * 0.9);
 	return score[B.who]-score[B.who^1];
 }
-*/
+
 // dep=現在在第幾層
 // cut=還要再走幾層
 SCORE SearchMax(const BOARD &B,int dep,int cut) {
