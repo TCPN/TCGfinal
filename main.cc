@@ -19,7 +19,7 @@
 #include<ctime>
 #endif
 
-char myversion[1024] = "Eval with fixed material Point v1.0";
+char myversion[1024] = "Eval with fixed material Point v1.0, some codes become function";
 
 const int DEFAULTTIME = 15;
 typedef  int SCORE;
@@ -36,6 +36,31 @@ clock_t Tick;     // 開始時刻
 clock_t TimeOut;  // 時限
 #endif
 MOV   BestMove; // 搜出來的最佳著法
+
+#define POS_NUM 32
+#define FIN_NUM 16
+
+unsigned long long hashfinpos[FIN_NUM][POS_NUM];
+unsigned long long rand64() { // assume RAND_MAX >= 65535
+	unsigned long long r = 0;
+	for(int i = 0; i < 8; i ++)
+		r = r * 256 + (rand() % 255);
+	return r;
+}
+void hashpoolInit()
+{
+	for(int i = 0; i < FIN_NUM; i ++)
+		for(int j = 0; j < POS_NUM; j ++)
+			hashfinpos[i][j] = rand64();
+}
+unsigned long long hash(const BOARD& B)
+{
+	return 0;
+}
+unsigned long long hashmove(const BOARD& B)
+{
+	return 0;
+}
 
 bool TimesUp() {
 #ifdef _WINDOWS
@@ -104,6 +129,7 @@ SCORE SearchMin(const BOARD &B,int dep,int cut) {
 	}
 	return ret;
 }
+
 #define max(a,b) ((a)>(b)?(a):(b))
 SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depthLimit)
 {
@@ -164,14 +190,28 @@ MOV Play(const BOARD &B) {
 	// TODO: LV4 偵測循環盤面
 	// 若搜出來的結果會比現在好就用搜出來的走法
 	int depthLimit = 11;
-	if(NegaScoutSearch(B,-INF,INF,0,depthLimit) > Eval(B))
+	SCORE scoutscore = NegaScoutSearch(B,-INF,INF,0,depthLimit);
+	SCORE nowscore = Eval(B);
+	if(scoutscore > nowscore)
 		return BestMove;
+	MOV bestMove = BestMove;
 	// if(SearchMax(B,0,5)>Eval(B))return BestMove;
-
+	/* 晚點再啟用
+	BOARD NB(B);
+	NB.who ^= 1;
+	SCORE nomove = Eval(NB);
+	SCORE nomovenext = NegaScoutSearch(NB,-INF,INF,0,2);// TODO: 注意時間問題
+	// 若不動(翻棋)比最佳步更糟，就不翻
+	// TODO: 翻棋不等於不動，有可能翻到有嚇阻作用的棋，如何計算？
+	// TODO: 找出在危險中的棋子，尋找如何救他
+	if(nomovenext < scoutscore)
+		return bestMove;
+	*/
+	
 	// 否則看看是否能翻棋
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X)c++;
 	// 若沒有地方翻，則用搜到的最好走法(相較目前是變差)
-	if(c==0)return BestMove;
+	if(c==0)return bestMove;
 	// 否則隨便翻一個地方
 	// TODO: LV2 有策略的翻
 	c=rand()%c;
@@ -217,6 +257,16 @@ FIN chess2fin(char chess) {
 	default: return FIN_E;
     }
 }
+MOV str2mov(char mov[6]) {
+	MOV m;
+	m.st = mov[0] - 'a' + (mov[1] - '1')*4;
+	m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
+	return m;
+}
+void mov2strs(MOV m, char src[3], char dst[3]) {
+	sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
+	sprintf(dst, "%c%c",(m.ed%4)+'a', m.ed/4+'1');
+}
 
 int main(int argc, char* argv[]) {
 #ifdef _WINDOWS
@@ -227,12 +277,13 @@ int main(int argc, char* argv[]) {
 #else
 	srand(Tick=time(NULL));
 #endif
+	hashpoolInit();
 
 	BOARD B;
 	if (argc!=3 && argc!=2) {
-	    TimeOut=(B.LoadGame("board.txt")-3)*1000;
-	    if(!B.ChkLose())Output(Play(B));
-	    return 0;
+		TimeOut=(B.LoadGame("board.txt")-3)*1000;
+		if(!B.ChkLose())Output(Play(B));
+		return 0;
 	}
 	Protocol *protocol;
 	protocol = new Protocol();
@@ -256,62 +307,56 @@ int main(int argc, char* argv[]) {
 	
 
 	B.Init(iCurrentPosition, iPieceCount, (color==PCLR_UNKNOW)?(-1):(int)color);
-	
+	unsigned long long h = hash(B);
 
 	MOV m;
 	if(turn) // 我先
 	{
-	    m = Play(B);
-	    sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
-	    sprintf(dst, "%c%c",(m.ed%4)+'a', m.ed/4+'1');
-		
-	    protocol->send(src, dst);
-	    protocol->recv(mov, remain_time);
-	    if( color == PCLR_UNKNOW)
-		color = protocol->get_color(mov);
-	    B.who = color;
-	    B.DoMove(m, chess2fin(mov[3]));
-		
-	    protocol->recv(mov, remain_time);
-	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
-	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
-	    B.DoMove(m, chess2fin(mov[3]));
+		m = Play(B);
+		mov2strs(m, src, dst);
+
+		protocol->send(src, dst);
+		protocol->recv(mov, remain_time);
+		if( color == PCLR_UNKNOW)
+			color = protocol->get_color(mov);
+		B.who = color;
+		B.DoMove(m, chess2fin(mov[3]));
+
+		protocol->recv(mov, remain_time);
+		m = str2mov(mov);
+		B.DoMove(m, chess2fin(mov[3]));
 	}
 	else // 對方先
 	{
-	    protocol->recv(mov, remain_time);
-	    if( color == PCLR_UNKNOW)
-	    {
-		color = protocol->get_color(mov);
-		B.who = color;
-	    }
-	    else {
-		B.who = color;
-		B.who^=1;
-	    }
-	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
-	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
-	    B.DoMove(m, chess2fin(mov[3]));
+		protocol->recv(mov, remain_time);
+		if( color == PCLR_UNKNOW)
+		{
+			color = protocol->get_color(mov);
+			B.who = color;
+		}
+		else {
+			B.who = color;
+			B.who^=1;
+		}
+		m = str2mov(mov);
+		B.DoMove(m, chess2fin(mov[3]));
 	}
 	B.Display();
 	while(1)
 	{
-	    m = Play(B);
-	    sprintf(src, "%c%c",(m.st%4)+'a', m.st/4+'1');
-	    sprintf(dst, "%c%c",(m.ed%4)+'a', m.ed/4+'1');
-		
-	    protocol->send(src, dst);
-	    protocol->recv(mov, remain_time);
-	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
-	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
-	    B.DoMove(m, chess2fin(mov[3]));
-	    B.Display();
+		m = Play(B);
+		mov2strs(m, src, dst);
 
-	    protocol->recv(mov, remain_time);
-	    m.st = mov[0] - 'a' + (mov[1] - '1')*4;
-	    m.ed = (mov[2]=='(')?m.st:(mov[3] - 'a' + (mov[4] - '1')*4);
-	    B.DoMove(m, chess2fin(mov[3]));
-	    B.Display();
+		protocol->send(src, dst);
+		protocol->recv(mov, remain_time);
+		m = str2mov(mov);
+		B.DoMove(m, chess2fin(mov[3]));
+		B.Display();
+
+		protocol->recv(mov, remain_time);
+		m = str2mov(mov);
+		B.DoMove(m, chess2fin(mov[3]));
+		B.Display();
 	}
 
 #ifdef _WINDOWS
