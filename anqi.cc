@@ -204,7 +204,7 @@ void BOARD::Display() const {
 #ifdef _WINDOWS
 		SetConsoleTextAttribute(hErr,8);
 #endif
-		for(int j=0;j<4;j++)fprintf(stderr,"[%02d]",mkpos(i,j));
+		for(int j=0;j<4;j++)fprintf(stderr,"[%02d]",mkpos(7-i,j));
 		if(i==2) {
 #ifdef _WINDOWS
 			SetConsoleTextAttribute(hErr,12);
@@ -214,12 +214,12 @@ void BOARD::Display() const {
 		}
 		fputc('\n',stderr);
 		for(int j=0;j<4;j++) {
-			const FIN f=fin[mkpos(i,j)];
+			const FIN f=fin[mkpos(7-i,j)];
 			const CLR c=GetColor(f);
 #ifdef _WINDOWS
 			SetConsoleTextAttribute(hErr,(c!=-1?12-c*2:7));
 #endif
-			fprintf(stderr," %s ",nam[fin[mkpos(i,j)]]);
+			fprintf(stderr," %s ",nam[fin[mkpos(7-i,j)]]);
 		}
 		if(i==0) {
 #ifdef _WINDOWS
