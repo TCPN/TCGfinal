@@ -12,6 +12,7 @@
 #include"anqi.hh"
 #include"Protocol.h"
 #include"ClientSocket.h"
+#include <cassert>
 
 #ifdef _WINDOWS
 #include<windows.h>
@@ -19,7 +20,9 @@
 #include<ctime>
 #endif
 
-char myversion[1024] = "Eval with fixed material Point v1.0, some codes become function";
+#include "moveOrdering.cc"
+
+char myversion[1024] = "Eval with fixed material Point v1.0";
 
 const int DEFAULTTIME = 15;
 typedef  int SCORE;
@@ -37,51 +40,7 @@ clock_t TimeOut;  // 時限
 #endif
 MOV   BestMove; // 搜出來的最佳著法
 
-typedef unsigned long long HASHKEY;
-#define POS_NUM 32
-#define FIN_NUM 16
-HASHKEY hashfinpos[FIN_NUM][POS_NUM];
-HASHKEY rand64() { // assume RAND_MAX >= 65535
-	HASHKEY r = 0;
-	for(int i = 0; i < 8; i ++)
-		r = r * 0x100 + (rand() % 0xff);
-	return r;
-}
-void hashpoolInit()
-{
-	for(int i = 0; i < FIN_NUM; i ++)
-		for(int j = 0; j < POS_NUM; j ++)
-			hashfinpos[i][j] = rand64();
-}
-HASHKEY hash(const BOARD& B)
-{
-	HASHKEY h = 0;
-	for(int i = 0; i < FIN_NUM; i ++)
-		h = h ^ hashfinpos[B.fin[i]][i];
-	return h;
-}
-HASHKEY hashmove(HASHKEY h, const BOARD& B, MOV m, FIN f)
-{
-	if(m.st!=m.ed) // move or eat
-	{
-		return h ^ hashfinpos[B.fin[m.st]][m.st] ^ hashfinpos[FIN_E][m.st]
-				^ hashfinpos[B.fin[m.ed]][m.ed] ^ hashfinpos[B.fin[m.st]][m.ed];
-	}
-	else // flip
-	{
-		return h ^ hashfinpos[FIN_X][m.st] ^ hashfinpos[f][m.st];
-	}
-}
-typedef struct hashentry
-{
-	HASHKEY key;
-	int searchDep;
-	char exact;
-	SCORE score;
-	MOV bestchild;
-} HENTRY;
-#define hashTblN 0x400000 // about 4.0e+6
-HENTRY hashtbl[2][hashTblN] = {{{0}}};
+#include "hashTable.cc"
 
 bool TimesUp() {
 #ifdef _WINDOWS
@@ -117,34 +76,36 @@ int MDist(POS a, POS b) {
 		return -1;
 	return (abs((int)((a/4) - (b/4))) + abs((int)((a%4) - (b%4))));
 }
-// TODO: LV2 注意循環盤面，若可以勝則避免和棋
+// DONETODO: LV2 注意循環盤面，若可以勝則避免和棋
 SCORE Eval(const BOARD &B) {
 	SCORE score[2] = {0,0};
 	int count[2][7] = {{0}};
 	int sum[2] = {0};
 	POS pos[2][7][5];
 	memset(&pos, -1, sizeof(POS)*2*7*5);
-	FIN mefin = FIN_X, hefin = FIN_X;
-	POS mepos = -1, hepos = -1;
+	FIN mf = FIN_X, hf = FIN_X;
+	POS mp = -1, hp = -1;
 	for(POS p = 0; p < 32; p++)
 	{
 		if(B.fin[p] < FIN_X)
 		{
 			const CLR c = GetColor(B.fin[p]);
 			const LVL l = GetLevel(B.fin[p]);
+	// TODO: try to dynamicly adjust
 			SCORE level_score[7] = {6540,3270,1640,870,390,770,100};
 			score[c] += level_score[l];
 			pos[c][l][count[c][l]++] = p;
 			sum[c]++;
 			if(c == B.who)
-				mepos = p;
+				mp = p;
 			else if(c == (B.who^1))
-				hepos = p;
+				hp = p;
 		}
 	}
 	for(int i = 0; i < 14; i++)
 	{
-		score[GetColor(FIN(i))] += (int)(B.cnt[i] * 0.9); // TODO: fix this, it's wrong
+	// TODO: fix this, it's wrong
+		score[GetColor(FIN(i))] += (int)(B.cnt[i] * 0.9);
 		//count[GetColor(i)][GetLevel(i)] += (int)B.cnt[i];
 		sum[GetColor(FIN(i))] += (int)B.cnt[i];
 	}
@@ -155,37 +116,37 @@ SCORE Eval(const BOARD &B) {
 		// if(sum[B.who] == 1)
 			// for(int i = 0; i < 7; i++)
 				// if(count[B.who][i])
-					// mefin = i + B.who * 7;
+					// mf = i + B.who * 7;
 		// if(sum[B.who^1] == 1)
 			// for(int i = 0; i < 7; i++)
 				// if(count[B.who^1][i])
-					// hefin = i + (B.who^1) * 7;
+					// hf = i + (B.who^1) * 7;
 			
 		if(sum[0] == 1 && sum[1] == 1)
 		{
-			if( GetLevel(mefin) != LVL_C
-			&& ChkEats(B.fin[mepos],B.fin[hepos])
-			&& (MDist(mepos, hepos) % 2 == 1))
+			if( GetLevel(mf) != LVL_C
+			&& ChkEats(B.fin[mp],B.fin[hp])
+			&& (MDist(mp, hp) % 2 == 1))
 			{
 				SCORE distcost = 0;
 				for(int j = 0; j < 4; j ++)
 				{
-					if(ADJ[hepos][j] != -1)
-						distcost += MDist(mepos, ADJ[hepos][j]);
+					if(ADJ[hp][j] != -1)
+						distcost += MDist(mp, ADJ[hp][j]);
 				}
-				return (WIN-distcost);
+				return (WIN-distcost-100);
 			}
-			else if(GetLevel(hefin) != LVL_C 
-			&& ChkEats(B.fin[hepos],B.fin[mepos])
-			&& (MDist(hepos, mepos) % 2 == 0))
+			else if(GetLevel(hf) != LVL_C 
+			&& ChkEats(B.fin[hp],B.fin[mp])
+			&& (MDist(hp, mp) % 2 == 0))
 			{
 				SCORE distcost = 0;
 				for(int j = 0; j < 4; j ++)
 				{
-					if(ADJ[hepos][j] != -1)
-						distcost += MDist(mepos, ADJ[hepos][j]); // ?????
+					if(ADJ[hp][j] != -1)
+						distcost += MDist(mp, ADJ[hp][j]); // ?????
 				}
-				return (-WIN+distcost);
+				return (-WIN+distcost+100);
 			}
 			else
 				return 0; //draw
@@ -196,9 +157,9 @@ SCORE Eval(const BOARD &B) {
 			for(i = 0; i < 7; i ++)
 				for(j = 0; j < count[B.who^1][i]; j ++)
 				{
-					hepos = pos[B.who^1][i][j];
-					if(GetLevel(B.fin[hepos]) != LVL_C && ChkEats(B.fin[hepos],B.fin[mepos]))
-						return -WIN;
+					hp = pos[B.who^1][i][j];
+					if(GetLevel(B.fin[hp]) != LVL_C && ChkEats(B.fin[hp],B.fin[mp]))
+						return -WIN+MDist(mp,hp)-1;
 				}
 			return 0; //draw
 		}
@@ -208,9 +169,9 @@ SCORE Eval(const BOARD &B) {
 			for(i = 0; i < 7; i ++)
 				for(j = 0; j < count[B.who][i]; j ++)
 				{
-					mepos = pos[B.who][i][j];
-					if(GetLevel(B.fin[mepos]) != LVL_C && ChkEats(B.fin[mepos],B.fin[hepos]))
-						return WIN;
+					mp = pos[B.who][i][j];
+					if(GetLevel(B.fin[mp]) != LVL_C && ChkEats(B.fin[mp],B.fin[hp]))
+						return WIN-MDist(mp,hp)+1;
 				}
 			return 0; //draw
 		}
@@ -289,17 +250,12 @@ int ChkCycle(int histLen, HASHKEY history[500])
 SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depLmt, HASHKEY h
 , int histLen, HASHKEY history[500])
 {
-fprintf(stderr,"%*s%d ",dep,"",__LINE__);
+fprintf(stderr,"%*sD%d %d ",dep,"",dep,__LINE__);
+//fprintf(stderr,"%llu ",h);
 	if(B.ChkLose())
 	{
-fprintf(stderr,"%d ",__LINE__);
+fprintf(stderr,"%d:Lose\n",__LINE__);
 		return -WIN;
-	}
-	if(ChkCycle(histLen,history) == 3)
-	{
-fprintf(stderr,"%d ",__LINE__);
-fprintf(stderr,"score:%d\n",+Eval(B));
-		return 0; // draw, because position cycle
 	}
 	
 	MOVLST lst;
@@ -318,16 +274,45 @@ fprintf(stderr,"score:%d\n",+Eval(B));
 				hashhit = 1;
 				break;
 			}
-if(!hashhit)fprintf(stderr,"HASH KEY COLLISION!!!\n");
+if(!hashhit)
+{
+fprintf(stderr,"HASH KEY COLLISION!!!\n");
+if(myversion[0] != '!')
+{
+sprintf(myversion,"!HASH KEY COLLISION! %s",myversion);
+}
+}
 		if(hashhit && entry->exact && ((depLmt - dep) <= entry->searchDep))
 		{
+fprintf(stderr,"%d RECdep:%d, dep%d ",__LINE__,entry->searchDep,depLmt - dep);
 			if(dep == 0)
 			{
 fprintf(stderr,"%d ",__LINE__);
-fprintf(stderr,"%s\n",mov2str(entry->bestchild));
 					BestMove = entry->bestchild;
 			}
-			return entry->score;
+			if(ChkCycle(histLen,history) == 2) // or 2
+			{
+				entry->score = 0;
+			}
+			else
+			{
+fprintf(stderr,"%d ",__LINE__);
+fprintf(stderr,"score:%d ",entry->score);
+fprintf(stderr,"%s /\n",mov2str(entry->bestchild));
+				return entry->score;
+			}
+		}
+	}
+	
+	if(ChkCycle(histLen,history) == 2) // or 2
+	{
+fprintf(stderr,"%d:Cycled ",__LINE__);
+		if(hashhit)
+			entry->score = 0;
+		if(dep != 0)
+		{
+fprintf(stderr,"%d /\n",__LINE__);
+			return 0; // draw, because position cycle
 		}
 	}
 	
@@ -338,30 +323,69 @@ fprintf(stderr,"%s\n",mov2str(entry->bestchild));
 	|| lst.num == 0)			// a terminal node(regardless flipping chesses)
 	{
 fprintf(stderr,"%d ",__LINE__);
-fprintf(stderr,"score:%d\n",+Eval(B));
+fprintf(stderr,"score:%d /\n",+Eval(B));
 		return +Eval(B);
 	}
+	
+	// adjust move ordering
+	// give score
+	int mvscore[68] = {0};
+	getMoveScore(B, lst, mvscore, hashhit);
+//for(int i=0;i<lst.num;i++)fprintf(stderr, "%d: %s(%d)\n", i, mov2str(lst.mov[i]),mvscore[i]);
+	// sort moves: merge sort
+	sortMoveByScore(lst, mvscore);
+//for(int i=0;i<lst.num;i++)fprintf(stderr, "%d: %s(%d)\n", i, mov2str(lst.mov[i]),mvscore[i]);
+//scanf("%*s");
 
 	SCORE m = (hashhit ? entry->score : -INF);	// the current lower bound; fail soft
 	SCORE n = beta;								// the current upper bound
 	SCORE t;
+fprintf(stderr,"%sm:%d beta:%d ",(hashhit?"HASHHIT ":""),m,beta);
+fprintf(stderr,"\n");
 	for(int i = 0; i < lst.num; i++)
 	{
-fprintf(stderr,"%*s%d ",dep,"",__LINE__);
+		if(i == 0)
+		{
+			bestChildmov = lst.mov[i];
+			if(dep == 0)
+				BestMove = lst.mov[i];
+		}
+fprintf(stderr,"%*sD%d %d ",dep,"",dep,__LINE__);
 fprintf(stderr,"%s ",mov2str(lst.mov[i]));
 		BOARD N(B);
-		N.Move(lst.mov[i]);		// get the next position, BORAD.Move should not used for FLIP
 		HASHKEY nh = hashmove(h,N,lst.mov[i],FIN_X);
+		N.Move(lst.mov[i]);		// get the next position, BORAD.Move should not used for FLIP
+if(nh != hash(N))
+{
+MOV m = lst.mov[i];
+fprintf(stderr, "\n");
+fprintf(stderr, "B  %llu\n", hash(B));
+fprintf(stderr, "h  %llu\n", h);
+fprintf(stderr, "s  %llu\n", hashfinpos[B.fin[m.st]][m.st]);
+fprintf(stderr, "s' %llu\n", hashfinpos[FIN_E][m.st]);
+fprintf(stderr, "e  %llu\n", hashfinpos[B.fin[m.ed]][m.ed]);
+fprintf(stderr, "e' %llu\n", hashfinpos[B.fin[m.st]][m.ed]);
+fprintf(stderr, "N  %llu\n", hash(N));
+fprintf(stderr, "h^ %llu\n", h ^ hashfinpos[B.fin[m.st]][m.st] ^ hashfinpos[FIN_E][m.st]^ hashfinpos[B.fin[m.ed]][m.ed] ^ hashfinpos[B.fin[m.st]][m.ed]);
+fprintf(stderr, "nh %llu\n", nh);
+fprintf(stderr, "%d %d\n", B.fin[m.st], B.fin[m.ed]);
+fprintf(stderr, "%d %d\n", N.fin[m.st], N.fin[m.ed]);
+BOARD Z(B);
+Z.Move(lst.mov[i]);
+fprintf(stderr, "%d %d\n", Z.fin[m.st], Z.fin[m.ed]);
+assert(nh == hash(N));
+}
 		// null window search; TEST in SCOUT
 		history[histLen] = nh;
-fprintf(stderr,"%d\n",__LINE__);
+fprintf(stderr,"%d:TEST>deeper\n",__LINE__);
 		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depLmt, nh, histLen+1,history);
-fprintf(stderr,"%*s%d ",dep,"",__LINE__);
-fprintf(stderr,"tscore:%d ", t);
+fprintf(stderr,"%*sD%d %d ",dep,"",dep,__LINE__);
+fprintf(stderr,"\\back t:%d m:%d ",t,m);
 fprintf(stderr,"lst.num:%d ",lst.num);
+//if(i==0)assert(t>m&&n==beta);
 		if(t > m)
 		{
-fprintf(stderr,"%d ",__LINE__);
+fprintf(stderr,"%d(t>m) ",__LINE__);
 			if(n == beta || depLmt - dep < 3 || t >= beta)
 			{
 				m = t;
@@ -371,23 +395,24 @@ fprintf(stderr,"score:%d ", m);
 			else
 			{
 				// re-search
-fprintf(stderr,"%d\n",__LINE__);
+fprintf(stderr,"%d:re-search>deeper",__LINE__);
+fprintf(stderr,"%s \\\n",mov2str(lst.mov[i]));
 				m = -NegaScoutSearch( N, -beta, -t, dep+1, depLmt, nh, histLen+1,history);
-fprintf(stderr,"%*s%d ",dep,"",__LINE__);
+fprintf(stderr,"%*sD%d %d ",dep,"",dep,__LINE__);
 fprintf(stderr,"score:%d ", m);
 				bestChildmov = lst.mov[i];
 			}
-fprintf(stderr,"%s\n",mov2str(lst.mov[i]));
+fprintf(stderr,"%s ",mov2str(lst.mov[i]));
 			if(dep == 0)
 				BestMove = lst.mov[i];
 		}
 fprintf(stderr,"%d ",__LINE__);
 		if(m >= beta)
 		{
-fprintf(stderr,"%d ",__LINE__);
-			// update hash table
-			// assume key won't == 0
-			// TODO: maybe use key == -1 as a mark for an empty hash entry
+fprintf(stderr,"%d(m>=beta) ",__LINE__);
+	// update hash table
+	// assume key won't == 0
+	// TODO: maybe use key == -1 as a mark for an empty hash entry
 			if(entry != NULL
 			&& (entry->key != h 
 				|| (depLmt - dep) > entry->searchDep
@@ -405,9 +430,9 @@ fprintf(stderr,"%s\n",mov2str(lst.mov[i]));
 			return m;			// beta cut off
 		}
 		n = max(alpha,m) + 1;	// set up a null window
-fprintf(stderr,"%d\n",__LINE__);
+fprintf(stderr,"%d next move\n",__LINE__);
 	}
-fprintf(stderr,"%*s%d ",dep,"",__LINE__);
+fprintf(stderr,"%*sD%d %d ",dep,"",dep,__LINE__);
 	// update hash table
 	// assume key won't == 0
 	// TODO: maybe use key == -1 as a mark for an empty hash entry
@@ -426,7 +451,7 @@ fprintf(stderr,"%d ",__LINE__);
 fprintf(stderr,"score:%d ", m);
 fprintf(stderr,"%s\n",mov2str(bestChildmov));
 	return m;
-}
+}// End of NegaScoutSearch
 
 MOV Play(const BOARD &B, int histLen, HASHKEY history[500]) {
 #ifdef _WINDOWS
@@ -440,63 +465,132 @@ MOV Play(const BOARD &B, int histLen, HASHKEY history[500]) {
 	POS p; int c=0;
 
 	// 新遊戲？隨機翻子
-	// TODO: LV1 detect 目前是第一手或第二手，使用預設的策略
-	// TODO: LV1 有策略的翻
-	if(B.who==-1)
+	// HALFDONETODO: LV1 detect 目前是第一手或第二手，使用預設的策略
+	// HALFDONETODO: LV1 有策略的翻
+	if(histLen == 1 || B.who==-1)
 	{
+		/*
 		p=rand()%32;
 		printf("%d\n",p);
-		return MOV(p,p);
+		*/
+		p=rand()%4;
+		p=p+5+(p>=2?20:0);
+		return MOV(p,p); // DONETODO: random it
+	}
+	else if(histLen == 2)
+	{
+		for(p=0;p<32;p++) {
+			if(B.fin[p]!=FIN_X) {
+				if(GetLevel(B.fin[p])<LVL_C) {
+					POS np = p;
+					if(p%4<2)	np+=2;
+					else		np-=2;
+					return MOV(np,np);
+				}
+				else
+				{
+					do{
+						int i = rand()%4;
+						if(ADJ[p][i] != -1)
+							return MOV(ADJ[p][i],ADJ[p][i]);
+					}while(1);
+				}
+			}
+		}
 	}
 	
 	// TODO: LV5 偵測連續未翻子或吃子的次數
-	// TODO: LV4 偵測循環盤面
+	// HALFDONETODO: LV4 偵測循環盤面
 	// 若搜出來的結果會比現在好就用搜出來的走法
 	// TODO: LV4 把HASHKEY打包進BOARD，避免重複計算、傳遞
+	BestMove = MOV(-1,-1);
 	
 fprintf(stderr,"%d ",__LINE__);
 	int depthLimit = 2;
 	SCORE scoutscore;
 	SCORE nowscore = Eval(B);
-	HASHKEY h = hash(B);
+	//HASHKEY h = hash(B);
+	if(histLen < 1)
+	{
+fprintf(stderr, "HISTORY ERROR!!!\n",depthLimit);
+		histLen = 1;
+		history[0] = hash(B);
+	}
+	// TODO: quiecent search
 	while(depthLimit <= 40)
 	{
 fprintf(stderr, "DEPLMT: %d:\n",depthLimit);
-		scoutscore = NegaScoutSearch(B,-INF,INF,0,depthLimit++,h,histLen,history);
+		scoutscore = NegaScoutSearch(B,-INF,INF,0,depthLimit++,history[histLen-1],histLen,history);
+fprintf(stderr, "end of DEPLMT: %d BestMove:%s\n",depthLimit-1,mov2str(BestMove));
 	}
-	if(scoutscore > nowscore)
+fprintf(stderr, "\n");
+	if(BestMove.st < 0 || BestMove.ed < 0 || BestMove.st >= 32 || BestMove.ed >= 32) // no move
 	{
 fprintf(stderr,"%d ",__LINE__);
+		// 翻棋
+		for(p=0;p<32;p++){if(B.fin[p]==FIN_X)c++;}
+		c=rand()%c;
+		for(p=0;p<32;p++){if((B.fin[p]==FIN_X)&&(--c<0))break;}
+fprintf(stderr,"%d no legal move, flip decide",__LINE__);
+		return MOV(p,p);
+	}
+fprintf(stderr,"now:%d moved:%d ",nowscore, scoutscore);
+	if(scoutscore > nowscore)
+	{
+fprintf(stderr,"%d better if move, decide ",__LINE__);
 		return BestMove;
 	}
-	MOV bestMove = BestMove;
+fprintf(stderr,"%d ",__LINE__);
 	// if(SearchMax(B,0,5)>Eval(B))return BestMove;
-	/*
-	// 晚點再啟用
-	BOARD NB(B);
-	NB.who = (NB.who^1);
-	SCORE nomove = Eval(NB);
-	TimeOut+=2;// TODO: 注意時間問題
-	SCORE nomovenext = NegaScoutSearch(NB,-INF,INF,0,2,h,histLen,history);
-	// 若不動(翻棋)比最佳步更糟，就不翻
-	// TODO: 翻棋不等於不動，有可能翻到有嚇阻作用的棋，如何計算？
-	// TODO: 找出在危險中的棋子，尋找如何救他
-	if(nomovenext < scoutscore)
-		return bestMove;
-	*/
 	
 	// 否則看看是否能翻棋
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X)c++;
 	// 若沒有地方翻，則用搜到的最好走法(相較目前是變差)
+	if(c==0)
+	{
+fprintf(stderr,"%d cannot flip, decide ",__LINE__);
+		return BestMove;
+	}
+	
 fprintf(stderr,"%d ",__LINE__);
-	if(c==0)return bestMove;
+	// 若不動(翻棋)比最佳步更糟，就不翻
+	BOARD NB(B);
+	NB.who = (NB.who^1);
+	SCORE nomove = Eval(NB);
+	// TODO: 注意時間問題
+	TimeOut+=2;
+fprintf(stderr, "no moves: \n");
+	MOV bm = BestMove;
+	SCORE nomovenext = -NegaScoutSearch(NB,-INF,INF,0,2,history[histLen-1],histLen,history);
+	BestMove = bm;
+fprintf(stderr, "end of no moves\n");
+	// TODO: 翻棋不等於不動，有可能翻到有嚇阻作用的棋，如何計算？
+	// TODO: 找出在危險中的棋子，尋找如何救他
+fprintf(stderr,"now:%d stay:%d  ",scoutscore,nomovenext);
+	if(nomovenext < scoutscore)
+	{
+fprintf(stderr,"%d worse if no move, decide ",__LINE__);
+		return BestMove;
+	}
+	
 	// 否則隨便翻一個地方
 	// TODO: LV2 有策略的翻
+	// 若有子快被吃，
+	// 找到要被吃的子
+	// 找到造成威脅的子
+	// 計算嚇阻的位置
+	// 計算嚇阻的機率
+	// 計算分數變化的期望值
+	// 若單純要翻子
+	// 找到最容易被吃的子
+	// 計算攻擊的位置
+	// 計算攻擊的機率
+	// 計算期望值
 	c=rand()%c;
 	for(p=0;p<32;p++)if(B.fin[p]==FIN_X&&--c<0)break;
-fprintf(stderr,"%d ",__LINE__);
+fprintf(stderr,"%d flip decide ",__LINE__);
 	return MOV(p,p);
-}
+}// End of Play
 
 FIN type2fin(int type) {
     switch(type) {
@@ -602,6 +696,27 @@ int main(int argc, char* argv[]) {
 	HASHKEY history[500] = {};
 	int histLen = 0;
 	history[histLen++] = h;
+	
+fprintf(stderr, "History move number: %d\n", moveRecord.number_of_moves);
+	if(moveRecord.number_of_moves>0) {
+		BOARD H; H.NewGame();
+		histLen = 0;
+		history[histLen] = hash(H);
+		histLen++;
+		MOV mh;
+		for(int i=0;i<moveRecord.number_of_moves;i++) {
+			mh = str2mov(moveRecord.move[i]);
+			history[histLen] = hashmove(history[histLen-1],H,mh,chess2fin(moveRecord.move[i][3]));
+			histLen++;
+			H.DoMove(mh, chess2fin(moveRecord.move[i][3]));
+		}
+		if(h != hash(H))
+		{
+			fprintf(stderr, "HASH DOESN'T MEET.\n");
+			histLen = 0;
+			history[histLen++] = h;
+		}
+	}
 
 	MOV m;
 	if(turn) // 我先
@@ -614,13 +729,16 @@ int main(int argc, char* argv[]) {
 		if( color == PCLR_UNKNOW)
 			color = protocol->get_color(mov);
 		B.who = color;
+		m = str2mov(mov);
+		history[histLen] = hashmove(history[histLen-1],B,m,chess2fin(mov[3]));
+		histLen++;
 		B.DoMove(m, chess2fin(mov[3]));
-		history[histLen++] = hashmove(h,B,m,chess2fin(mov[3]));
 
 		protocol->recv(mov, remain_time);
 		m = str2mov(mov);
+		history[histLen] = hashmove(history[histLen-1],B,m,chess2fin(mov[3]));
+		histLen++;
 		B.DoMove(m, chess2fin(mov[3]));
-		history[histLen++] = hashmove(h,B,m,chess2fin(mov[3]));
 	}
 	else // 對方先
 	{
@@ -635,8 +753,9 @@ int main(int argc, char* argv[]) {
 			B.who^=1;
 		}
 		m = str2mov(mov);
+		history[histLen] = hashmove(history[histLen-1],B,m,chess2fin(mov[3]));
+		histLen++;
 		B.DoMove(m, chess2fin(mov[3]));
-		history[histLen++] = hashmove(h,B,m,chess2fin(mov[3]));
 	}
 	B.Display();
 	while(1)
@@ -645,18 +764,26 @@ int main(int argc, char* argv[]) {
 		mov2strs(m, src, dst);
 fprintf(stderr,"%d'%c' %d'%c' %d'%c'  ",src[0],src[0],src[1],src[1],src[2],src[2]);
 fprintf(stderr,"%d'%c' %d'%c' %d'%c' \n",dst[0],dst[0],dst[1],dst[1],dst[2],dst[2]);
+		
+#ifdef _WINDOWS
+		char titleMessage[1024] = {0};
+		sprintf(titleMessage, "%s Eval: %d  BestMove: %s", myversion, Eval(B), mov2str(m));
+		SetConsoleTitle(titleMessage);
+#endif
 
 		protocol->send(src, dst);
 		protocol->recv(mov, remain_time);
 		m = str2mov(mov);
+		history[histLen] = hashmove(history[histLen-1],B,m,chess2fin(mov[3]));
+		histLen++;
 		B.DoMove(m, chess2fin(mov[3]));
-		history[histLen++] = hashmove(h,B,m,chess2fin(mov[3]));
 		B.Display();
 
 		protocol->recv(mov, remain_time);
 		m = str2mov(mov);
+		history[histLen] = hashmove(history[histLen-1],B,m,chess2fin(mov[3]));
+		histLen++;
 		B.DoMove(m, chess2fin(mov[3]));
-		history[histLen++] = hashmove(h,B,m,chess2fin(mov[3]));
 		B.Display();
 	}
 
