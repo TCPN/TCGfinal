@@ -517,11 +517,27 @@ fprintf(stderr, "HISTORY ERROR!!!\n",depthLimit);
 		history[0] = hash(B);
 	}
 	// TODO: quiecent search
+fprintf(stderr, "DEPLMT: %d:\n",depthLimit);
+	scoutscore = NegaScoutSearch(B,-INF,INF,0,depthLimit++,history[histLen-1],histLen,history);
+fprintf(stderr, "end of DEPLMT: %d BestMove:%s\n",depthLimit-1,mov2str(BestMove));
+	SCORE best = scoutscore, thresh = 1000;
 	while(depthLimit <= 40)
 	{
-fprintf(stderr, "DEPLMT: %d:\n",depthLimit);
-		scoutscore = NegaScoutSearch(B,-INF,INF,0,depthLimit++,history[histLen-1],histLen,history);
-fprintf(stderr, "end of DEPLMT: %d BestMove:%s\n",depthLimit-1,mov2str(BestMove));
+fprintf(stderr, "DEPLMT: %d: try thresh\n",depthLimit);
+		scoutscore = NegaScoutSearch(B,best-thresh,best+thresh,0,depthLimit,history[histLen-1],histLen,history);
+		if(scoutscore >= best+thresh) {
+fprintf(stderr, "DEPLMT: %d: fail high\n",depthLimit);
+		scoutscore = NegaScoutSearch(B,scoutscore,+INF,0,depthLimit,history[histLen-1],histLen,history);
+		}
+		else if(scoutscore <= best-thresh) {
+fprintf(stderr, "DEPLMT: %d: fail low\n",depthLimit);
+		scoutscore = NegaScoutSearch(B,-INF,scoutscore,0,depthLimit,history[histLen-1],histLen,history);
+		}
+fprintf(stderr, "DEPLMT: %d end BestMove:%s\n",depthLimit,mov2str(BestMove));
+		best = scoutscore;
+		if(TimesUp())
+			break;
+		depthLimit++;
 	}
 fprintf(stderr, "\n");
 	if(BestMove.st < 0 || BestMove.ed < 0 || BestMove.st >= 32 || BestMove.ed >= 32) // no move
