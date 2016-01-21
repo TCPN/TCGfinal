@@ -40,7 +40,7 @@ CLR GetColor(FIN f) {
 }
 
 LVL GetLevel(FIN f) {
-	assert(f<FIN_X);
+	//assert(f<FIN_X);
 	return LVL(f%7);
 }
 
