@@ -79,6 +79,7 @@ int MDist(POS a, POS b) {
 	return (abs((int)((a/4) - (b/4))) + abs((int)((a%4) - (b%4))));
 }
 // DONETODO: LV2 注意循環盤面，若可以勝則避免和棋
+SCORE level_score[7] = {65400,32700,16400,8700,3900,7700,1000};
 SCORE Eval(const BOARD &B) {
 	SCORE score[2] = {0,0};
 	int count[2][7] = {{0}};
@@ -94,7 +95,6 @@ SCORE Eval(const BOARD &B) {
 			const CLR c = GetColor(B.fin[p]);
 			const LVL l = GetLevel(B.fin[p]);
 	// TODO: try to dynamicly adjust
-			SCORE level_score[7] = {6540,3270,1640,870,390,770,100};
 			score[c] += level_score[l];
 			pos[c][l][count[c][l]++] = p;
 			sum[c]++;
@@ -107,7 +107,7 @@ SCORE Eval(const BOARD &B) {
 	for(int i = 0; i < 14; i++)
 	{
 	// TODO: fix this, it's wrong
-		score[GetColor(FIN(i))] += (int)(B.cnt[i] * 0.9);
+		score[GetColor(FIN(i))] += (int)(B.cnt[i] * (level_score[GetLevel(FIN(i))] - 1));
 		//count[GetColor(i)][GetLevel(i)] += (int)B.cnt[i];
 		sum[GetColor(FIN(i))] += (int)B.cnt[i];
 	}
@@ -345,6 +345,7 @@ SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depL
 		TimesUp()?"Time Up ":"",
 		lst.num == 0?"No Move ":"");
 		fprintf(dbgmsgf,"eval:%d /\n",+Eval(B));
+		// lst.num == 0 here means you can only flip
 		
 		if(lst.num!=0){
 			completeSearch = false;
@@ -387,34 +388,18 @@ SCORE NegaScoutSearch(const BOARD &B, SCORE alpha, SCORE beta, int dep, int depL
 		}
 		fprintf(dbgmsgf,"%*sD%d %d ",dep,"",dep,__LINE__);
 		fprintf(dbgmsgf,"%s ",mov2str(lst.mov[i]));
+		bool eating = (B.fin[lst.mov[i].ed] != FIN_E);
+		if(eating)
+			fprintf(dbgmsgf,"eating depLmt:%d->%d ",depLmt,depLmt+1);
 		BOARD N(B);
 		HASHKEY nh = hashmove(h,N,lst.mov[i],FIN_X);
 		N.Move(lst.mov[i]);		// get the next position, BORAD.Move should not used for FLIP
 		//assert(N.who != B.who);
-if(nh != hash(N))
-{
-MOV m = lst.mov[i];
-fprintf(dbgmsgf, "\n");
-fprintf(dbgmsgf, "B  %llu\n", hash(B));
-fprintf(dbgmsgf, "h  %llu\n", h);
-fprintf(dbgmsgf, "s  %llu\n", hashfinpos[B.fin[m.st]][m.st]);
-fprintf(dbgmsgf, "s' %llu\n", hashfinpos[FIN_E][m.st]);
-fprintf(dbgmsgf, "e  %llu\n", hashfinpos[B.fin[m.ed]][m.ed]);
-fprintf(dbgmsgf, "e' %llu\n", hashfinpos[B.fin[m.st]][m.ed]);
-fprintf(dbgmsgf, "N  %llu\n", hash(N));
-fprintf(dbgmsgf, "h^ %llu\n", h ^ hashfinpos[B.fin[m.st]][m.st] ^ hashfinpos[FIN_E][m.st]^ hashfinpos[B.fin[m.ed]][m.ed] ^ hashfinpos[B.fin[m.st]][m.ed]);
-fprintf(dbgmsgf, "nh %llu\n", nh);
-fprintf(dbgmsgf, "%d %d\n", B.fin[m.st], B.fin[m.ed]);
-fprintf(dbgmsgf, "%d %d\n", N.fin[m.st], N.fin[m.ed]);
-BOARD Z(B);
-Z.Move(lst.mov[i]);
-fprintf(dbgmsgf, "%d %d\n", Z.fin[m.st], Z.fin[m.ed]);
-assert(nh == hash(N));
-}
+
 		// null window search; TEST in SCOUT
 		history[histLen] = nh;
 		fprintf(dbgmsgf,"%d:TEST>deeper\n",__LINE__);
-		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depLmt, nh, histLen+1,history);
+		t = -NegaScoutSearch( N, -n, -max(alpha,m), dep+1, depLmt + (eating?1:0), nh, histLen+1,history);
 #ifdef _TEST
 //scanf("%*s");
 #else
@@ -438,7 +423,7 @@ assert(nh == hash(N));
 				// re-search
 				fprintf(dbgmsgf,"%d:re-search>deeper",__LINE__);
 				fprintf(dbgmsgf,"%s \\\n",mov2str(lst.mov[i]));
-				m = -NegaScoutSearch( N, -beta, -t, dep+1, depLmt, nh, histLen+1,history);
+				m = -NegaScoutSearch( N, -beta, -t, dep+1, depLmt + (eating?1:0), nh, histLen+1,history);
 #ifdef _TEST
 //scanf("%*s");
 #else
@@ -585,7 +570,8 @@ MOV Play(const BOARD &B, int histLen, HASHKEY history[500]) {
 		depthLimit++;
 		
 		fprintf(dbgmsgf, "end of DEPLMT: %d BestMove:%s\n",depthLimit-1,mov2str(BestMove));
-		SCORE best = scoutscore, thresh = 1000;
+		SCORE best = scoutscore;
+		SCORE thresh = 10000;
 		while(depthLimit <= iterDepthLimit)
 		{
 			completeSearch = true;
@@ -731,7 +717,11 @@ int main(int argc, char* argv[]) {
 	dbgmsgf = stderr;
 #else
 	char filen[1024];
-	sprintf(filen, "DEBUG-%d.txt", time(NULL));
+	int ti = time(NULL);
+	int mi = 0;
+	sprintf(filen, "mkdir DEBUG-%d", ti, mi);
+	system(filen);
+	sprintf(filen, "DEBUG-%d/%02d.txt", ti, mi);
 	dbgmsgf = fopen(filen,"w");
 #endif
 #ifdef _WINDOWS
@@ -814,7 +804,16 @@ fprintf(dbgmsgf, "histLen:%d\n",histLen);
 	MOV m;
 	if(turn) // 我先
 	{
+#ifdef _CONTROL
+		char cmd[1024]={};
+		scanf("%s",cmd);
+		if(cmd[0]=='p')
+			m = Play(B, histLen, history);
+		else
+			m = str2mov(cmd);
+#else
 		m = Play(B, histLen, history);
+#endif
 		mov2strs(m, src, dst);
 
 		protocol->send(src, dst);
@@ -853,7 +852,7 @@ fprintf(dbgmsgf, "histLen:%d\n",histLen);
 	B.Display();
 	while(1)
 	{
-#ifdef _TEST
+#ifdef _CONTROL
 		char cmd[1024]={};
 		scanf("%s",cmd);
 		if(cmd[0]=='p')
@@ -867,6 +866,13 @@ fprintf(dbgmsgf, "histLen:%d\n",histLen);
 fprintf(dbgmsgf,"%d'%c' %d'%c' %d'%c'  ",src[0],src[0],src[1],src[1],src[2],src[2]);
 fprintf(dbgmsgf,"%d'%c' %d'%c' %d'%c' \n",dst[0],dst[0],dst[1],dst[1],dst[2],dst[2]);
 fprintf(dbgmsgf,"#####%d:%s-%s#####\n",histLen,dst,src);
+#ifdef _TEST
+#else
+	fclose(dbgmsgf);
+	mi++;
+	sprintf(filen, "DEBUG-%d/%02d.txt", ti, mi);
+	dbgmsgf = fopen(filen,"w");
+#endif
 		
 #ifdef _WINDOWS
 		char titleMessage[1024] = {0};
@@ -890,8 +896,14 @@ fprintf(dbgmsgf,"#####%d:%s-%s#####\n",histLen,dst,src);
 		B.Display();
 	}
 
+#ifdef _TEST
+#else
+	fclose(dbgmsgf);
+#endif
 #ifdef _WINDOWS
+	fprintf(stderr,"reset console window title:'%s'...",consoleTitle);
 	SetConsoleTitle(consoleTitle);
+	fprintf(stderr,"done\n");
 #endif
 	return 0;
 }
